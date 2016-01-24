@@ -7,18 +7,17 @@ import (
 	"net/http"
 )
 
-// supgitter@gmail.com
-// suppressly
-
-// https://github.com/supgitter
-// suppressly1
-
-// Gitter token: 4b409f3d662592192095055ac603eaf106b0b92b
-
 var (
 	RestURL   = "https://api.gitter.im/v1/"
 	StreamURL = "https://stream.gitter.im/v1/"
 )
+
+type Message struct {
+	Text     string
+	Mentions []struct {
+		UserId string
+	}
+}
 
 type Room struct {
 	Id, Name string
@@ -83,46 +82,28 @@ func NewGitter(token string) (*Gitter, error) {
 
 func (g *Gitter) Initialize() {
 	for _, room := range g.rooms {
-		go func(room Room) {
+		go func(room Room) error {
 			for {
-				// req, err = http.NewRequest("GET", RestURL + "rooms", nil)
-				// if err != nil {
-				// 	return nil, fmt.Errorf("Could not create GET request for Gitter rooms: %v", err)
-				// }
-				// req.Header.Add("Accept", "application/json")
-				// req.Header.Add("Authorization", "Bearer "+token)
-
-				resp, err := http.Get(StreamURL + room.Id + "/chatMessages")
+				req, err := http.NewRequest("GET", StreamURL+room.Id+"/chatMessages", nil)
 				if err != nil {
-					log.Fatalf("Error getting message, room %s: %v", room.Name, err)
+					return fmt.Errorf("Could not create GET request for Gitter msgs: %v", err)
 				}
-				log.Println("%+v", resp)
+				req.Header.Add("Accept", "application/json")
+				req.Header.Add("Authorization", "Bearer "+g.token)
 
+				resp, err := http.DefaultClient.Do(req)
+				if err != nil {
+					return fmt.Errorf("Could not retrieve Gitter messages: %v", err)
+				}
+				defer resp.Body.Close()
+
+				var msgs []Message
+				if err = json.NewDecoder(resp.Body).Decode(&msgs); err != nil {
+					return fmt.Errorf("Could not decode Gitter messages data: %v", err)
+				}
+
+				log.Printf("msgs: %+v\n", msgs)
 			}
 		}(room)
 	}
 }
-
-// {
-//     "id": "56a42b486b6468374a0926a4",
-//     "text": "sup man",
-//     "html": "sup man",
-//     "sent": "2016-01-24T01:39:20.224Z",
-//     "fromUser": {
-//         "id": "56a3f554e610378809bddc9c",
-//         "username": "supgitter",
-//         "displayName": "supgitter",
-//         "url": "/supgitter",
-//         "avatarUrlSmall": "https://avatars0.githubusercontent.com/u/16857436?v=3&s=60",
-//         "avatarUrlMedium": "https://avatars0.githubusercontent.com/u/16857436?v=3&s=128",
-//         "v": 1,
-//         "gv": "3"
-//     },
-//     "unread": true,
-//     "readBy": 0,
-//     "urls": [],
-//     "mentions": [],
-//     "issues": [],
-//     "meta": [],
-//     "v": 1
-// }

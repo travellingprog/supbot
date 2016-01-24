@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	RestURL   = "https://api.gitter.im/v1/"
-	StreamURL = "https://stream.gitter.im/v1/"
+	RestURL   = "https://api.gitter.im/v1"
+	StreamURL = "https://stream.gitter.im/v1"
 )
 
 type Message struct {
@@ -33,64 +33,38 @@ type Gitter struct {
 	rooms []Room
 }
 
-func NewGitter(token string) (*Gitter, error) {
-	// USERID
-	req, err := http.NewRequest("GET", RestURL+"user", nil)
-	if err != nil {
-		return nil, fmt.Errorf("Could not create GET request for Gitter bot user: %v", err)
-	}
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", "Bearer "+token)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Could not retrieve Gitter bot user: %v", err)
-	}
-	defer resp.Body.Close()
-
+func NewGitter(token string) (g *Gitter, err error) {
 	var users []User
-	if err = json.NewDecoder(resp.Body).Decode(&users); err != nil {
-		return nil, fmt.Errorf("Could not decode Gitter bot user: %v", err)
+	if err = Get(RestURL+"/user", token, &users, "current user"); err != nil {
+		return
 	}
 	if len(users) < 1 {
-		return nil, fmt.Errorf("Gitter user data is empty")
+		err = fmt.Errorf("Gitter user data is empty")
+		return
 	}
 	user := users[0]
-	log.Printf("User: %+v\n", user)
-
-	// ROOMS
-	req, err = http.NewRequest("GET", RestURL+"rooms", nil)
-	if err != nil {
-		return nil, fmt.Errorf("Could not create GET request for Gitter rooms: %v", err)
-	}
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", "Bearer "+token)
-
-	resp2, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("Could not retrieve Gitter rooms: %v", err)
-	}
-	defer resp2.Body.Close()
 
 	var rooms []Room
-	if err = json.NewDecoder(resp2.Body).Decode(&rooms); err != nil {
-		return nil, fmt.Errorf("Could not decode room data: %v", err)
+	if err = Get(RestURL+"/rooms", token, &rooms, "rooms"); err != nil {
+		return
 	}
 
-	return &Gitter{token: token, user: user, rooms: rooms}, nil
+	g = &Gitter{token: token, user: user, rooms: rooms}
+	return
 }
 
 func (g *Gitter) Initialize() {
 	for _, room := range g.rooms {
 		go func(room Room) error {
 			for {
-				req, err := http.NewRequest("GET", StreamURL+room.Id+"/chatMessages", nil)
+				req, err := http.NewRequest("GET", StreamURL+"/rooms/"+room.Id+"/chatMessages", nil)
 				if err != nil {
 					return fmt.Errorf("Could not create GET request for Gitter msgs: %v", err)
 				}
 				req.Header.Add("Accept", "application/json")
 				req.Header.Add("Authorization", "Bearer "+g.token)
 
+				// Long-polling here
 				resp, err := http.DefaultClient.Do(req)
 				if err != nil {
 					return fmt.Errorf("Could not retrieve Gitter messages: %v", err)
@@ -106,4 +80,24 @@ func (g *Gitter) Initialize() {
 			}
 		}(room)
 	}
+}
+
+func Get(path string, token string, target interface{}, descr string) (err error) {
+	req, err := http.NewRequest("GET", path, nil)
+	if err != nil {
+		return fmt.Errorf("Could not create GET request for Gitter %s: %v", descr, err)
+	}
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Authorization", "Bearer "+token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("Could not GET Gitter %s: %v", descr, err)
+	}
+	defer resp.Body.Close()
+
+	if err = json.NewDecoder(resp.Body).Decode(target); err != nil {
+		return fmt.Errorf("Could not decode Gitter %s: %v", descr, err)
+	}
+	return
 }

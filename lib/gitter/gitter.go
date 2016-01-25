@@ -1,3 +1,4 @@
+// TODO: Add documentation
 package gitter
 
 import (
@@ -53,34 +54,58 @@ func NewGitter(token string) (g *Gitter, err error) {
 	return
 }
 
-func (g *Gitter) Initialize() {
-	for _, room := range g.rooms {
-		go func(room Room) error {
-			for {
-				req, err := http.NewRequest("GET", StreamURL+"/rooms/"+room.Id+"/chatMessages", nil)
-				if err != nil {
-					return fmt.Errorf("Could not create GET request for Gitter msgs: %v", err)
-				}
-				req.Header.Add("Accept", "application/json")
-				req.Header.Add("Authorization", "Bearer "+g.token)
+func (g *Gitter) Initialize(done chan struct{}) {
+	// TODO: Test this somehow
+	out := make(chan Message)
+	defer close(out)
 
-				// Long-polling here
-				resp, err := http.DefaultClient.Do(req)
-				if err != nil {
-					return fmt.Errorf("Could not retrieve Gitter messages: %v", err)
-				}
-				defer resp.Body.Close()
+	if len(g.rooms) < 1 {
+		// TODO: return error
+	}
+	// TODO: Handle multiple Gitter rooms
+	// - create io.Writer for each room
+	// - create Hal for each room (will probably require change in hal.go)
+	//
+	// for _, room := range g.rooms {
+	// 	go g.GetRoomMsgs(room, out, done)
+	// }
+	go g.GetRoomMsgs(g.rooms[0], out, done)
 
-				var msgs []Message
-				if err = json.NewDecoder(resp.Body).Decode(&msgs); err != nil {
-					return fmt.Errorf("Could not decode Gitter messages data: %v", err)
-				}
-
-				log.Printf("msgs: %+v\n", msgs)
-			}
-		}(room)
+	for {
+		select {
+		case msg := <-out:
+			// TODO: check if mentioned
+			// TODO: pass to Hal
+			log.Printf("msg: %+v\n", msg)
+		case <-done:
+			return
+		}
 	}
 }
+
+func (g *Gitter) GetRoomMsgs(room Room, out chan Message, done chan struct{}) {
+	// TODO: Test this somehow
+	msgURL := StreamURL + "/rooms/" + roomId + "/chatMessages"
+
+	for {
+		var msgs []Message
+		if err := Get(msgURL, g.token, &msgs, "chat messages"); err != nil {
+			log.Printf("Error processing chat messages: %v\n", err)
+		}
+
+		// TODO: if len(msgs) == 0, or there was an issue with msgs,
+		//       done is not checked. Need to fix that
+		for _, msg := range msgs {
+			select {
+			case <-done:
+				return
+			case out <- msg:
+			}
+		}
+	}
+}
+
+// TODO: Make an io.Writer for Hal
 
 func Get(path string, token string, target interface{}, descr string) (err error) {
 	req, err := http.NewRequest("GET", path, nil)

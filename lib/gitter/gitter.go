@@ -36,70 +36,73 @@ type Gitter struct {
 
 func NewGitter(token string) (g *Gitter, err error) {
 	var users []User
-	if err = Get(RestURL+"/user", token, &users, "current user"); err != nil {
-		return
+	if err = get(RestURL+"/user", token, &users, "current user"); err != nil {
+		return nil, err
 	}
 	if len(users) < 1 {
 		err = fmt.Errorf("Gitter user data is empty")
-		return
+		return nil, err
 	}
 	user := users[0]
 
 	var rooms []Room
-	if err = Get(RestURL+"/rooms", token, &rooms, "rooms"); err != nil {
-		return
+	if err = get(RestURL+"/rooms", token, &rooms, "rooms"); err != nil {
+		return nil, err
 	}
 
 	g = &Gitter{token: token, user: user, rooms: rooms}
-	return
+	return g, nil
 }
 
-func (g *Gitter) Initialize(done chan struct{}) {
+func (g *Gitter) Initialize(done chan bool) {
 	// TODO: Test this somehow
-	out := make(chan Message)
-	defer close(out)
+	msgCh := make(chan Message)
+	errCh := make(chan error)
+	defer close(msgCh)
+	defer close(errCh)
 
 	if len(g.rooms) < 1 {
-		// TODO: return error
+		return
 	}
+
 	// TODO: Handle multiple Gitter rooms
 	// - create io.Writer for each room
 	// - create Hal for each room (will probably require change in hal.go)
-	//
-	// for _, room := range g.rooms {
-	// 	go g.GetRoomMsgs(room, out, done)
-	// }
-	go g.GetRoomMsgs(g.rooms[0], out, done)
+	go g.GetRoomMsgs(g.rooms[0], msgCh, errCh, done)
 
 	for {
 		select {
-		case msg := <-out:
+		case <-done:
+			return
+		case msg := <-msgCh:
 			// TODO: check if mentioned
 			// TODO: pass to Hal
 			log.Printf("msg: %+v\n", msg)
-		case <-done:
-			return
 		}
 	}
 }
 
-func (g *Gitter) GetRoomMsgs(room Room, out chan Message, done chan struct{}) {
-	// TODO: Test this somehow
-	msgURL := StreamURL + "/rooms/" + roomId + "/chatMessages"
+func (g *Gitter) GetRoomMsgs(room Room, msgCh chan Message, errCh chan error, done chan bool) {
+	msgURL := StreamURL + "/rooms/" + room.Id + "/chatMessages"
 
 	for {
-		var msgs []Message
-		if err := Get(msgURL, g.token, &msgs, "chat messages"); err != nil {
-			log.Printf("Error processing chat messages: %v\n", err)
+		select {
+		case <-done:
+			return
+		default:
 		}
 
-		// TODO: if len(msgs) == 0, or there was an issue with msgs,
-		//       done is not checked. Need to fix that
+		var msgs []Message
+		if err := get(msgURL, g.token, &msgs, "chat messages"); err != nil {
+			errCh <- fmt.Errorf("Error processing chat messages: %v\n", err)
+			continue
+		}
+
 		for _, msg := range msgs {
 			select {
 			case <-done:
 				return
-			case out <- msg:
+			case msgCh <- msg:
 			}
 		}
 	}
@@ -107,7 +110,7 @@ func (g *Gitter) GetRoomMsgs(room Room, out chan Message, done chan struct{}) {
 
 // TODO: Make an io.Writer for Hal
 
-func Get(path string, token string, target interface{}, descr string) (err error) {
+func get(path string, token string, target interface{}, descr string) error {
 	req, err := http.NewRequest("GET", path, nil)
 	if err != nil {
 		return fmt.Errorf("Could not create GET request for Gitter %s: %v", descr, err)
@@ -121,8 +124,12 @@ func Get(path string, token string, target interface{}, descr string) (err error
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("Gitter GET request for %s returned status %d", descr, resp.StatusCode)
+	}
+
 	if err = json.NewDecoder(resp.Body).Decode(target); err != nil {
 		return fmt.Errorf("Could not decode Gitter %s: %v", descr, err)
 	}
-	return
+	return nil
 }

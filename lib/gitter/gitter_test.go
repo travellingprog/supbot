@@ -44,7 +44,7 @@ func setMockServer() *httptest.Server {
 	return httptest.NewServer(http.HandlerFunc(handler))
 }
 
-func TestPrivateGet(t *testing.T) {
+func TestGet(t *testing.T) {
 	var err error
 
 	var users []User
@@ -85,7 +85,7 @@ func TestGetRoomMsgs(t *testing.T) {
 	msgCh := make(chan Message)
 	errCh := make(chan error)
 
-	go gitter.GetRoomMsgs(goodRoom, msgCh, errCh, done)
+	go gitter.getRoomMsgs(goodRoom, msgCh, errCh, done)
 	select {
 	case msg := <-msgCh:
 		t.Logf("msg: %+v\n", msg)
@@ -98,7 +98,7 @@ func TestGetRoomMsgs(t *testing.T) {
 	msgCh2 := make(chan Message)
 	errCh2 := make(chan error)
 
-	go gitter.GetRoomMsgs(badRoom, msgCh2, errCh2, done)
+	go gitter.getRoomMsgs(badRoom, msgCh2, errCh2, done)
 	select {
 	case msg := <-msgCh2:
 		t.Errorf("Should not have received msg: %+v\n", msg)
@@ -107,11 +107,26 @@ func TestGetRoomMsgs(t *testing.T) {
 	}
 }
 
-// func TestInitialize(t *testing.T) {
-// 	gitter, _ := NewGitter(Token)
+func TestWasMentioned(t *testing.T) {
+	gitter, _ := NewGitter(Token)
+	userID := gitter.user.Id
 
-// 	done := make(chan bool)
+	// test when mentioned
+	msg1 := new(Message)
+	msg1.Mentions = append(msg1.Mentions, struct{ UserId string }{userID})
+	t.Logf("msg1: %+v\n", msg1)
+	if !gitter.wasMentioned(*msg1) {
+		t.Error("Should have been mentioned.")
+	}
 
-// 	gitter.Initialize(done)
+	// test when NOT mentioned
+	msg2 := new(Message)
+	t.Logf("msg2: %+v\n", msg2)
+	if gitter.wasMentioned(*msg2) {
+		t.Error("Should NOT have been mentioned.")
+	}
+}
 
+// TODO
+// func TestStart(t *testing.T) {
 // }

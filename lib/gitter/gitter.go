@@ -54,12 +54,11 @@ func NewGitter(token string) (g *Gitter, err error) {
 	return g, nil
 }
 
-func (g *Gitter) Initialize(done chan bool) {
+// Start begins fetching messages for the Gitter room, and outputs them to the console
+func (g *Gitter) Start(done chan bool) {
 	// TODO: Test this somehow
 	msgCh := make(chan Message)
 	errCh := make(chan error)
-	defer close(msgCh)
-	defer close(errCh)
 
 	if len(g.rooms) < 1 {
 		return
@@ -68,21 +67,24 @@ func (g *Gitter) Initialize(done chan bool) {
 	// TODO: Handle multiple Gitter rooms
 	// - create io.Writer for each room
 	// - create Hal for each room (will probably require change in hal.go)
-	go g.GetRoomMsgs(g.rooms[0], msgCh, errCh, done)
+
+	go g.getRoomMsgs(g.rooms[0], msgCh, errCh, done)
 
 	for {
 		select {
 		case <-done:
 			return
+		case err := <-errCh:
+			log.Println(err)
 		case msg := <-msgCh:
-			// TODO: check if mentioned
-			// TODO: pass to Hal
-			log.Printf("msg: %+v\n", msg)
+			if g.wasMentioned(msg) {
+				// write it to supbot (Hal)
+			}
 		}
 	}
 }
 
-func (g *Gitter) GetRoomMsgs(room Room, msgCh chan Message, errCh chan error, done chan bool) {
+func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error, done chan bool) {
 	msgURL := StreamURL + "/rooms/" + room.Id + "/chatMessages"
 
 	for {
@@ -94,7 +96,7 @@ func (g *Gitter) GetRoomMsgs(room Room, msgCh chan Message, errCh chan error, do
 
 		var msgs []Message
 		if err := get(msgURL, g.token, &msgs, "chat messages"); err != nil {
-			errCh <- fmt.Errorf("Error processing chat messages: %v\n", err)
+			errCh <- err
 			continue
 		}
 
@@ -106,6 +108,16 @@ func (g *Gitter) GetRoomMsgs(room Room, msgCh chan Message, errCh chan error, do
 			}
 		}
 	}
+}
+
+// wasMentioned checks if gitter bot was mentioned in the message
+func (g *Gitter) wasMentioned(msg Message) bool {
+	for _, mention := range msg.Mentions {
+		if mention.UserId == g.user.Id {
+			return true
+		}
+	}
+	return false
 }
 
 // TODO: Make an io.Writer for Hal

@@ -1,17 +1,24 @@
 // TODO: Add documentation
+// TODO: Be able to handle multiple rooms
 package gitter
 
 import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
+	"io"
 	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/gophergala2016/supbot/lib/hal"
 )
 
 var (
 	RestURL   = "https://api.gitter.im/v1"
 	StreamURL = "https://stream.gitter.im/v1"
+	supBot    *hal.Hal
 )
 
 type Message struct {
@@ -26,7 +33,7 @@ type Room struct {
 }
 
 type User struct {
-	Id string
+	Id, Username string
 }
 
 type Gitter struct {
@@ -57,7 +64,6 @@ func NewGitter(token string) (g *Gitter, err error) {
 
 // Start begins fetching messages for the Gitter room, and outputs them to the console
 func (g *Gitter) Start(done chan bool) {
-	// TODO: Test this somehow
 	msgCh := make(chan Message)
 	errCh := make(chan error)
 
@@ -65,29 +71,14 @@ func (g *Gitter) Start(done chan bool) {
 		return
 	}
 
-	// TODO: Handle multiple Gitter rooms
-	// - create io.Writer for each room
-	// - create Hal for each room (will probably require change in hal.go)
-
+	supBot = hal.New(g)
 	go g.getRoomMsgs(g.rooms[0], msgCh, errCh, done)
-
-	for {
-		select {
-		case <-done:
-			return
-		case err := <-errCh:
-			log.Println(err)
-		case msg := <-msgCh:
-			if g.wasMentioned(msg) {
-				// write it to supbot (Hal)
-			}
-		}
-	}
+	go g.processMsgs(msgCh, done)
+	go g.processErrs(os.Stderr, errCh, done)
 }
 
 // Write is given the output from sup and writes it to the chat room.
 func (g *Gitter) Write(o []byte) (n int, err error) {
-	// TODO: Be able to handle multiple rooms
 	url := RestURL + "/rooms/" + g.rooms[0].Id + "/chatMessages"
 
 	body := new(bytes.Buffer)
@@ -141,7 +132,38 @@ func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error, do
 	}
 }
 
-// wasMentioned checks if gitter bot was mentioned in the message
+// processErrs grabs each error coming in from errCh and outputs it to the provided output writer,
+// with a time log.
+func (g *Gitter) processErrs(w io.Writer, errCh chan error, done chan bool) {
+	for {
+		select {
+		case <-done:
+			return
+		case err := <-errCh:
+			logTime := time.Now().Format(time.RFC3339)
+			fmt.Fprintf(w, "%s - %v\n", logTime, err)
+		}
+	}
+}
+
+// processMsgs takes any chat message coming in from msgCh that mentions the gitter bot, and
+// sends it to our instance of Hal.
+func (g *Gitter) processMsgs(msgCh chan Message, done chan bool) {
+	for {
+		select {
+		case <-done:
+			return
+		case msg := <-msgCh:
+			if g.wasMentioned(msg) {
+				msg.Text = strings.Replace(msg.Text, "@"+g.user.Username, "", -1)
+				msg.Text = strings.TrimSpace(msg.Text)
+				supBot.Write([]byte(msg.Text))
+			}
+		}
+	}
+}
+
+// wasMentioned checks if our gitter bot was mentioned in the message
 func (g *Gitter) wasMentioned(msg Message) bool {
 	for _, mention := range msg.Mentions {
 		if mention.UserId == g.user.Id {
@@ -150,8 +172,6 @@ func (g *Gitter) wasMentioned(msg Message) bool {
 	}
 	return false
 }
-
-// TODO: Make an io.Writer for Hal
 
 func get(path string, token string, target interface{}, descr string) error {
 	req, err := http.NewRequest("GET", path, nil)

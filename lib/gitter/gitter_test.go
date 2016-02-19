@@ -1,10 +1,14 @@
 package gitter
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strings"
 	"testing"
+	"time"
 )
 
 const (
@@ -74,6 +78,16 @@ func TestNewGitter(t *testing.T) {
 	t.Logf("gitter: %+v\n", gitter)
 }
 
+// func TestStart(t *testing.T) {
+// 	// just check that this doesn't blow up,
+// 	// since this only calls other methods which have unit tests
+// 	gitter, _ := NewGitter(Token)
+// 	done := make(chan bool)
+// 	gitter.Start(done)
+// 	time.Sleep(1 * time.Millisecond)
+// 	close(done)
+// }
+
 func TestWrite(t *testing.T) {
 	gitter, _ := NewGitter(Token)
 	supOutput := []byte("Hello World")
@@ -115,6 +129,30 @@ func TestGetRoomMsgs(t *testing.T) {
 	}
 }
 
+func TestProcessErrs(t *testing.T) {
+	gitter, _ := NewGitter(Token)
+	w := new(bytes.Buffer)
+	errCh := make(chan error, 1)
+	done := make(chan bool)
+	defer close(done)
+
+	errMsg := "Some error"
+	errCh <- fmt.Errorf(errMsg)
+	go gitter.processErrs(w, errCh, done)
+	time.Sleep(1 * time.Millisecond)
+
+	output := string(w.Bytes())
+	output = strings.SplitN(output, " - ", 2)[1]
+	output = strings.TrimSpace(output)
+	if output != errMsg {
+		t.Errorf("Expected: %s, Received: %s\n", errMsg, output)
+	}
+}
+
+func TestProcessMsgs(t *testing.T) {
+	t.Error("An error")
+}
+
 func TestWasMentioned(t *testing.T) {
 	gitter, _ := NewGitter(Token)
 	userID := gitter.user.Id
@@ -134,7 +172,3 @@ func TestWasMentioned(t *testing.T) {
 		t.Error("Should NOT have been mentioned.")
 	}
 }
-
-// TODO
-// func TestStart(t *testing.T) {
-// }

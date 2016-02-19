@@ -18,7 +18,6 @@ import (
 var (
 	RestURL   = "https://api.gitter.im/v1"
 	StreamURL = "https://stream.gitter.im/v1"
-	supBot    *hal.Hal
 )
 
 type Message struct {
@@ -71,9 +70,9 @@ func (g *Gitter) Start(done chan bool) {
 		return
 	}
 
-	supBot = hal.New(g)
+	supBot := hal.New(g)
 	go g.getRoomMsgs(g.rooms[0], msgCh, errCh, done)
-	go g.processMsgs(msgCh, done)
+	go g.processMsgs(supBot, msgCh, done)
 	go g.processErrs(os.Stderr, errCh, done)
 }
 
@@ -148,7 +147,7 @@ func (g *Gitter) processErrs(w io.Writer, errCh chan error, done chan bool) {
 
 // processMsgs takes any chat message coming in from msgCh that mentions the gitter bot, and
 // sends it to our instance of Hal.
-func (g *Gitter) processMsgs(msgCh chan Message, done chan bool) {
+func (g *Gitter) processMsgs(supBot io.Writer, msgCh chan Message, done chan bool) {
 	for {
 		select {
 		case <-done:

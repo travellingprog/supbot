@@ -136,21 +136,39 @@ func TestProcessErrs(t *testing.T) {
 	done := make(chan bool)
 	defer close(done)
 
-	errMsg := "Some error"
-	errCh <- fmt.Errorf(errMsg)
+	input := "Some error"
+	errCh <- fmt.Errorf(input)
 	go gitter.processErrs(w, errCh, done)
 	time.Sleep(1 * time.Millisecond)
 
 	output := string(w.Bytes())
 	output = strings.SplitN(output, " - ", 2)[1]
 	output = strings.TrimSpace(output)
-	if output != errMsg {
-		t.Errorf("Expected: %s, Received: %s\n", errMsg, output)
+	if output != input {
+		t.Errorf("Expected '%s', Received '%s'\n", input, output)
 	}
 }
 
 func TestProcessMsgs(t *testing.T) {
-	t.Error("An error")
+	gitter, _ := NewGitter(Token)
+	supBot := new(bytes.Buffer)
+	msgCh := make(chan Message, 1)
+	done := make(chan bool)
+	defer close(done)
+
+	msg := new(Message)
+	input := "Hello sup"
+	msg.Text = "@" + gitter.user.Username + " " + input
+	msg.Mentions = append(msg.Mentions, struct{ UserId string }{gitter.user.Id})
+	msgCh <- *msg
+
+	go gitter.processMsgs(supBot, msgCh, done)
+	time.Sleep(1 * time.Millisecond)
+
+	output := string(supBot.Bytes())
+	if output != input {
+		t.Errorf("Expected '%s', Received '%s'\n", input, output)
+	}
 }
 
 func TestWasMentioned(t *testing.T) {

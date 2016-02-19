@@ -78,15 +78,15 @@ func TestNewGitter(t *testing.T) {
 	t.Logf("gitter: %+v\n", gitter)
 }
 
-// func TestStart(t *testing.T) {
-// 	// just check that this doesn't blow up,
-// 	// since this only calls other methods which have unit tests
-// 	gitter, _ := NewGitter(Token)
-// 	done := make(chan bool)
-// 	gitter.Start(done)
-// 	time.Sleep(1 * time.Millisecond)
-// 	close(done)
-// }
+func TestStart(t *testing.T) {
+	// just check that this doesn't blow up,
+	// since this only calls other methods which have their own unit tests
+	gitter, _ := NewGitter(Token)
+	done := make(chan bool)
+	gitter.Start(done)
+	time.Sleep(1 * time.Millisecond)
+	close(done)
+}
 
 func TestWrite(t *testing.T) {
 	gitter, _ := NewGitter(Token)

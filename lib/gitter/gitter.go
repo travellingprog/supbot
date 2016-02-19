@@ -2,6 +2,7 @@
 package gitter
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -84,6 +85,36 @@ func (g *Gitter) Start(done chan bool) {
 	}
 }
 
+// Write is given the output from sup and writes it to the chat room.
+func (g *Gitter) Write(o []byte) (n int, err error) {
+	// TODO: Be able to handle multiple rooms
+	url := RestURL + "/rooms/" + g.rooms[0].Id + "/chatMessages"
+
+	body := new(bytes.Buffer)
+	newMsg := Message{Text: string(o)}
+	if err := json.NewEncoder(body).Encode(newMsg); err != nil {
+		return 0, fmt.Errorf("Could not encode supbot output: %v", err)
+	}
+
+	req, err := http.NewRequest("POST", url, body)
+	if err != nil {
+		return 0, fmt.Errorf("Could not create POST request to Gitter: %v", err)
+	}
+	req.Header.Add("Accept", "application/json")
+	req.Header.Add("Authorization", "Bearer "+g.token)
+	req.Header.Add("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("Could not POST Gitter message: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("Gitter POST request returned status %d", resp.StatusCode)
+	}
+	return len(o), nil
+}
+
 func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error, done chan bool) {
 	msgURL := StreamURL + "/rooms/" + room.Id + "/chatMessages"
 
@@ -135,7 +166,6 @@ func get(path string, token string, target interface{}, descr string) error {
 		return fmt.Errorf("Could not GET Gitter %s: %v", descr, err)
 	}
 	defer resp.Body.Close()
-
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("Gitter GET request for %s returned status %d", descr, resp.StatusCode)
 	}

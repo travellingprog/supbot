@@ -62,7 +62,7 @@ func NewGitter(token string) (g *Gitter, err error) {
 }
 
 // Start begins fetching messages for the Gitter room, and outputs them to the console
-func (g *Gitter) Start(done chan bool) {
+func (g *Gitter) Start() {
 	msgCh := make(chan Message)
 	errCh := make(chan error)
 
@@ -71,9 +71,21 @@ func (g *Gitter) Start(done chan bool) {
 	}
 
 	supBot := hal.New(g)
-	go g.getRoomMsgs(g.rooms[0], msgCh, errCh, done)
-	go g.processMsgs(supBot, msgCh, done)
-	go g.processErrs(os.Stderr, errCh, done)
+
+	go func() {
+		for {
+			g.processMsgs(supBot, msgCh)
+		}
+	}()
+	go func() {
+		for {
+			g.processErrs(os.Stderr, errCh)
+		}
+	}()
+
+	for {
+		g.getRoomMsgs(g.rooms[0], msgCh, errCh)
+	}
 }
 
 // Write is given the output from sup and writes it to the chat room.
@@ -105,60 +117,35 @@ func (g *Gitter) Write(o []byte) (n int, err error) {
 	return len(o), nil
 }
 
-func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error, done chan bool) {
+func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error) {
 	msgURL := StreamURL + "/rooms/" + room.Id + "/chatMessages"
+	var msgs []Message
+	if err := get(msgURL, g.token, &msgs, "chat messages"); err != nil {
+		errCh <- err
+		return
+	}
 
-	for {
-		select {
-		case <-done:
-			return
-		default:
-		}
-
-		var msgs []Message
-		if err := get(msgURL, g.token, &msgs, "chat messages"); err != nil {
-			errCh <- err
-			continue
-		}
-
-		for _, msg := range msgs {
-			select {
-			case <-done:
-				return
-			case msgCh <- msg:
-			}
-		}
+	for _, msg := range msgs {
+		msgCh <- msg
 	}
 }
 
-// processErrs grabs each error coming in from errCh and outputs it to the provided output writer,
+// processErrs grabs one error from errCh and outputs it to the provided io.Writer,
 // with a time log.
-func (g *Gitter) processErrs(w io.Writer, errCh chan error, done chan bool) {
-	for {
-		select {
-		case <-done:
-			return
-		case err := <-errCh:
-			logTime := time.Now().Format(time.RFC3339)
-			fmt.Fprintf(w, "%s - %v\n", logTime, err)
-		}
-	}
+func (g *Gitter) processErrs(w io.Writer, errCh chan error) {
+	err := <-errCh
+	logTime := time.Now().Format(time.RFC3339)
+	fmt.Fprintf(w, "%s - %v\n", logTime, err)
 }
 
-// processMsgs takes any chat message coming in from msgCh that mentions the gitter bot, and
+// processMsgs takes one Message from msgCh that mentions the gitter bot, and
 // sends it to our instance of Hal.
-func (g *Gitter) processMsgs(supBot io.Writer, msgCh chan Message, done chan bool) {
-	for {
-		select {
-		case <-done:
-			return
-		case msg := <-msgCh:
-			if g.wasMentioned(msg) {
-				msg.Text = strings.Replace(msg.Text, "@"+g.user.Username, "", -1)
-				msg.Text = strings.TrimSpace(msg.Text)
-				supBot.Write([]byte(msg.Text))
-			}
-		}
+func (g *Gitter) processMsgs(supBot io.Writer, msgCh chan Message) {
+	msg := <-msgCh
+	if g.wasMentioned(msg) {
+		msg.Text = strings.Replace(msg.Text, "@"+g.user.Username, "", -1)
+		msg.Text = strings.TrimSpace(msg.Text)
+		supBot.Write([]byte(msg.Text))
 	}
 }
 

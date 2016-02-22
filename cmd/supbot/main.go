@@ -22,9 +22,6 @@ func main() {
 		if err != nil {
 			panic(err)
 		}
-
-		done := make(chan bool)
-		g.Start(done)
-		<-done // will wait forever
+		g.Start()
 	}
 }

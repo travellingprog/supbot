@@ -8,7 +8,6 @@ import (
 	"os"
 	"strings"
 	"testing"
-	"time"
 )
 
 const (
@@ -79,13 +78,9 @@ func TestNewGitter(t *testing.T) {
 }
 
 func TestStart(t *testing.T) {
-	// just check that this doesn't blow up,
-	// since this only calls other methods which have their own unit tests
-	gitter, _ := NewGitter(Token)
-	done := make(chan bool)
-	gitter.Start(done)
-	time.Sleep(1 * time.Millisecond)
-	close(done)
+	// Nothing to check here, this calls other methods
+	// that each have their own test
+	t.SkipNow()
 }
 
 func TestWrite(t *testing.T) {
@@ -99,28 +94,25 @@ func TestWrite(t *testing.T) {
 func TestGetRoomMsgs(t *testing.T) {
 	gitter, _ := NewGitter(Token)
 
-	done := make(chan bool)
-	defer close(done)
-
 	// Test by passing correct room
 	goodRoom := Room{Id: RoomId}
-	msgCh := make(chan Message)
-	errCh := make(chan error)
+	msgCh := make(chan Message, 10)
+	errCh := make(chan error, 1)
 
-	go gitter.getRoomMsgs(goodRoom, msgCh, errCh, done)
+	gitter.getRoomMsgs(goodRoom, msgCh, errCh)
 	select {
-	case msg := <-msgCh:
-		t.Logf("msg: %+v\n", msg)
 	case err := <-errCh:
 		t.Error(err)
+	case msg := <-msgCh:
+		t.Logf("msg: %+v\n", msg)
 	}
 
 	// Test by passing wrong room
 	badRoom := Room{Id: "NOT_" + RoomId}
-	msgCh2 := make(chan Message)
-	errCh2 := make(chan error)
+	msgCh2 := make(chan Message, 10)
+	errCh2 := make(chan error, 1)
 
-	go gitter.getRoomMsgs(badRoom, msgCh2, errCh2, done)
+	gitter.getRoomMsgs(badRoom, msgCh2, errCh2)
 	select {
 	case msg := <-msgCh2:
 		t.Errorf("Should not have received msg: %+v\n", msg)
@@ -133,13 +125,10 @@ func TestProcessErrs(t *testing.T) {
 	gitter, _ := NewGitter(Token)
 	w := new(bytes.Buffer)
 	errCh := make(chan error, 1)
-	done := make(chan bool)
-	defer close(done)
 
 	input := "Some error"
 	errCh <- fmt.Errorf(input)
-	go gitter.processErrs(w, errCh, done)
-	time.Sleep(1 * time.Millisecond)
+	gitter.processErrs(w, errCh)
 
 	output := string(w.Bytes())
 	output = strings.SplitN(output, " - ", 2)[1]
@@ -153,8 +142,6 @@ func TestProcessMsgs(t *testing.T) {
 	gitter, _ := NewGitter(Token)
 	supBot := new(bytes.Buffer)
 	msgCh := make(chan Message, 1)
-	done := make(chan bool)
-	defer close(done)
 
 	msg := new(Message)
 	input := "Hello sup"
@@ -162,8 +149,7 @@ func TestProcessMsgs(t *testing.T) {
 	msg.Mentions = append(msg.Mentions, struct{ UserId string }{gitter.user.Id})
 	msgCh <- *msg
 
-	go gitter.processMsgs(supBot, msgCh, done)
-	time.Sleep(1 * time.Millisecond)
+	gitter.processMsgs(supBot, msgCh)
 
 	output := string(supBot.Bytes())
 	if output != input {

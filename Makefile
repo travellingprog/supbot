@@ -1,6 +1,7 @@
 .PHONY: help run build build_pkgs install clean
 
-SLACK_TOKEN ?= xoxb-19232920311-vb7KYcw8EpdfcN9Qz3v7cWpl
+# SLACK_TOKEN ?= xoxb-19232920311-vb7KYcw8EpdfcN9Qz3v7cWpl
+GITTER_TOKEN ?= 4b409f3d662592192095055ac603eaf106b0b92b
 
 help:
 	@echo "run:     Run code in dev mode."

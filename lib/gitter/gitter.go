@@ -7,10 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
-	"os"
 	"strings"
-	"time"
 
 	"github.com/gophergala2016/supbot/lib/hal"
 )
@@ -21,10 +20,10 @@ var (
 )
 
 type Message struct {
-	Text     string
+	Text     string `json:"text"`
 	Mentions []struct {
 		UserId string
-	}
+	} `json:"mentions"`
 }
 
 type Room struct {
@@ -79,10 +78,11 @@ func (g *Gitter) Start() {
 	}()
 	go func() {
 		for {
-			g.processErrs(os.Stderr, errCh)
+			log.Println(<-errCh)
 		}
 	}()
 
+	log.Println("Listening for messages on Gitter...")
 	for {
 		g.getRoomMsgs(g.rooms[0], msgCh, errCh)
 	}
@@ -119,23 +119,12 @@ func (g *Gitter) Write(o []byte) (n int, err error) {
 
 func (g *Gitter) getRoomMsgs(room Room, msgCh chan Message, errCh chan error) {
 	msgURL := StreamURL + "/rooms/" + room.Id + "/chatMessages"
-	var msgs []Message
-	if err := get(msgURL, g.token, &msgs, "chat messages"); err != nil {
+	var msg Message
+	if err := get(msgURL, g.token, &msg, "chat messages"); err != nil {
 		errCh <- err
 		return
 	}
-
-	for _, msg := range msgs {
-		msgCh <- msg
-	}
-}
-
-// processErrs grabs one error from errCh and outputs it to the provided io.Writer,
-// with a time log.
-func (g *Gitter) processErrs(w io.Writer, errCh chan error) {
-	err := <-errCh
-	logTime := time.Now().Format(time.RFC3339)
-	fmt.Fprintf(w, "%s - %v\n", logTime, err)
+	msgCh <- msg
 }
 
 // processMsgs takes one Message from msgCh that mentions the gitter bot, and
